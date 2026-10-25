@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>うさぎつなぎパズルDX</title>
+<style>
+*{
+  box-sizing:border-box;
+  -webkit-tap-highlight-color:transparent;
+}
+html,body{
+  margin:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  touch-action:none;
+  background:#f6f2ff;
+  font-family:sans-serif;
+}
+.screen{
+  display:none;
+  width:100%;
+  height:100%;
+  padding:12px;
+}
+.active{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+}
+.card{
+  width:min(96vw,520px);
+  background:#fff;
+  border-radius:18px;
+  padding:18px;
+  box-shadow:0 4px 14px rgba(0,0,0,.15);
+}
+h1{
+  margin:10px 0;
+  text-align:center;
+  color:#6b3fd6;
+}
+button{
+  border:none;
+  background:#6b3fd6;
+  color:#fff;
+  border-radius:14px;
+  padding:16px 28px;
+  font-size:20px;
+  min-width:200px;
+}
+#rabbit{
+  font-size:72px;
+  text-align:center;
+}
+.info{
+  text-align:center;
+  line-height:1.8;
+}
+#gameScreen{
+  justify-content:flex-start;
+  padding-top:8px;
+}
+#hud{
+  width:min(96vw,520px);
+  display:flex;
+  justify-content:space-between;
+  font-size:22px;
+  font-weight:bold;
+  margin-bottom:6px;
+}
+#message{
+  width:min(96vw,520px);
+  text-align:center;
+  font-weight:bold;
+  color:#ff6200;
+  height:28px;
+  margin-bottom:6px;
+}
+#board{
+  width:min(96vw,520px);
+  aspect-ratio:1/1;
+  display:grid;
+  gap:4px;
+  background:#d7c8ff;
+  padding:4px;
+  border-radius:18px;
+  touch-action:none;
+}
+.cell{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  border-radius:12px;
+  font-size:clamp(18px,4vw,30px);
+  user-select:none;
+  transition:.08s;
+}
+.selected{
+  outline:4px solid #000;
+  transform:scale(.9);
+}
+.bomb{
+  animation:bombPulse 1s infinite;
+  box-shadow:0 0 12px #ff0000;
+}
+@keyframes bombPulse{
+  0%{transform:scale(1);}
+  50%{transform:scale(1.12);}
+  100%{transform:scale(1);}
+}
+#rank{
+  font-size:46px;
+  color:#ff7a00;
+  font-weight:bold;
+}
+</style>
+</head>
+<body>
+
+<div id="startScreen" class="screen active">
+  <div class="card">
+    <div id="rabbit">🐰</div>
+    <h1>うさぎつなぎパズルDX</h1>
+    <div class="info">
+      同じ色・同じ柄をなぞって消そう！<br><br>
+      3個以上で消える！<br>
+      7個以上つなぐと💣爆弾出現！<br>
+      爆弾をタップすると周りを一気に消せる！<br><br>
+      制限時間30秒で高得点を目指そう！
+    </div>
+    <div style="text-align:center;margin-top:16px;">
+      <button id="startBtn">スタート</button>
+    </div>
+  </div>
+</div>
+
+<div id="gameScreen" class="screen">
+  <div id="hud">
+    <div>🏆 <span id="score">0</span></div>
+    <div>⏰ <span id="time">30</span></div>
+  </div>
+
+  <div id="message"></div>
+
+  <div id="board"></div>
+</div>
+
+<div id="resultScreen" class="screen">
+  <div class="card" style="text-align:center">
+    <div style="font-size:72px;">🐰</div>
+    <h1>結果発表</h1>
+
+    <div style="font-size:32px;margin:10px 0;">
+      スコア：<span id="finalScore">0</span>
+    </div>
+
+    <div id="rank">C</div>
+
+    <button id="restartBtn" style="margin-top:20px;">
+      もう一度遊ぶ
+    </button>
+  </div>
+</div>
+
+<script>
+const size=7;
+const board=document.getElementById("board");
+const scoreEl=document.getElementById("score");
+const timeEl=document.getElementById("time");
+const messageEl=document.getElementById("message");
+
+const colors=[
+"#ff7675",
+"#74b9ff",
+"#55efc4",
+"#ffeaa7",
+"#fd79a8"
+];
+
+const icons=[
+"🐰",
+"🥕",
+"🌸",
+"⭐",
+"🍀"
+];
+
+let grid=[];
+let score=0;
+let time=30;
+let timer=null;
+let dragging=false;
+let path=[];
+
+function randomBlock(){
+  const id=Math.floor(Math.random()*icons.length);
+
+  return{
+    type:"normal",
+    id:id,
+    icon:icons[id],
+    color:colors[id]
+  };
+}
+
+function createGrid(){
+  grid=[];
+
+  for(let y=0;y<size;y++){
+    const row=[];
+    for(let x=0;x<size;x++){
+      row.push(randomBlock());
+    }
+    grid.push(row);
+  }
+}
+
+function render(){
+
+  board.innerHTML="";
+  board.style.gridTemplateColumns=`repeat(${size},1fr)`;
+
+  for(let y=0;y<size;y++){
+    for(let x=0;x<size;x++){
+
+      const block=grid[y][x];
+      const cell=document.createElement("div");
+
+      cell.className="cell";
+      cell.dataset.x=x;
+      cell.dataset.y=y;
+
+      if(block.type==="bomb"){
+        cell.textContent="💣";
+        cell.style.background="#222";
+        cell.style.color="#fff";
+        cell.classList.add("bomb");
+      }else{
+        cell.textContent=block.icon;
+        cell.style.background=block.color;
+      }
+
+      if(path.some(p=>p.x===x&&p.y===y)){
+        cell.classList.add("selected");
+      }
+
+      board.appendChild(cell);
+    }
+  }
+}
+
+function showScreen(id){
+  document.querySelectorAll(".screen")
+  .forEach(v=>v.classList.remove("active"));
+
+  document.getElementById(id)
+  .classList.add("active");
+}
+
+function showMessage(text){
+
+  messageEl.textContent=text;
+
+  clearTimeout(showMessage.timer);
+
+  showMessage.timer=setTimeout(()=>{
+    if(messageEl.textContent===text){
+      messageEl.textContent="";
+    }
+  },1200);
+}
+
+function startGame(){
+
+  score=0;
+  time=30;
+  path=[];
+
+  scoreEl.textContent=0;
+  timeEl.textContent=30;
+  messageEl.textContent="";
+
+  createGrid();
+  render();
+
+  showScreen("gameScreen");
+
+  clearInterval(timer);
+
+  timer=setInterval(()=>{
+
+    time--;
+    timeEl.textContent=time;
+
+    if(time<=0){
+      clearInterval(timer);
+      endGame();
+    }
+
+  },1000);
+}
+
+function adjacent(a,b){
+  return Math.abs(a.x-b.x)<=1 &&
+         Math.abs(a.y-b.y)<=1 &&
+         !(a.x===b.x && a.y===b.y);
+}
+
+function sameType(a,b){
+  return grid[a.y][a.x].id===grid[b.y][b.x].id;
+}
+
+function getCell(px,py){
+
+  const el=document.elementFromPoint(px,py);
+
+  if(!el || !el.classList.contains("cell")){
+    return null;
+  }
+
+  return{
+    x:Number(el.dataset.x),
+    y:Number(el.dataset.y)
+  };
+}
+
+function addPoint(p){
+
+  const block=grid[p.y][p.x];
+
+  if(block.type==="bomb"){
+    return;
+  }
+
+  if(path.length===0){
+    path.push(p);
+    render();
+    return;
+  }
+
+  if(path.some(v=>v.x===p.x&&v.y===p.y)){
+    return;
+  }
+
+  const last=path[path.length-1];
+
+  if(adjacent(last,p) && sameType(path[0],p)){
+    path.push(p);
+    render();
+  }
+}
+
+function collapseBoard(){
+
+  for(let x=0;x<size;x++){
+
+    const column=[];
+
+    for(let y=size-1;y>=0;y--){
+      if(grid[y][x]!==null){
+        column.push(grid[y][x]);
+      }
+    }
+
+    while(column.length<size){
+      column.push(randomBlock());
+    }
+
+    for(let y=size-1,i=0;y>=0;y--,i++){
+      grid[y][x]=column[i];
+    }
+  }
+}
+
+function createBomb(){
+
+  const empty=[];
+
+  for(let y=0;y<size;y++){
+    for(let x=0;x<size;x++){
+      if(grid[y][x]===null){
+        empty.push({x,y});
+      }
+    }
+  }
+
+  if(empty.length===0){
+    return;
+  }
+
+  const pos=empty[Math.floor(Math.random()*empty.length)];
+
+  grid[pos.y][pos.x]={
+    type:"bomb"
+  };
+
+  showMessage("💣 爆弾出現！");
+}
+
+function explodeBomb(x,y){
+
+  let removed=0;
+
+  for(let dy=-2;dy<=2;dy++){
+    for(let dx=-2;dx<=2;dx++){
+
+      const nx=x+dx;
+      const ny=y+dy;
+
+      if(
+        nx>=0 &&
+        nx<size &&
+        ny>=0 &&
+        ny<size
+      ){
+        if(grid[ny][nx]!==null){
+          removed++;
+        }
+
+        grid[ny][nx]=null;
+      }
+    }
+  }
+
+  score+=removed*15+100;
+  scoreEl.textContent=score;
+
+  collapseBoard();
+
+  showMessage("💥 大爆発！");
+  render();
+}
+
+function finishPath(){
+
+  if(path.length<3){
+    path=[];
+    render();
+    return;
+  }
+
+  path.forEach(p=>{
+    grid[p.y][p.x]=null;
+  });
+
+  score+=path.length*10+(path.length-3)*5;
+
+  if(path.length>=7){
+    createBomb();
+    score+=100;
+  }
+
+  scoreEl.textContent=score;
+
+  collapseBoard();
+
+  path=[];
+  render();
+}
+
+board.addEventListener("pointerdown",(e)=>{
+
+  const p=getCell(e.clientX,e.clientY);
+
+  if(!p){
+    return;
+  }
+
+  const block=grid[p.y][p.x];
+
+  if(block.type==="bomb"){
+    explodeBomb(p.x,p.y);
+    return;
+  }
+
+  dragging=true;
+  path=[];
+
+  addPoint(p);
+});
+
+board.addEventListener("pointermove",(e)=>{
+
+  if(!dragging){
+    return;
+  }
+
+  const p=getCell(e.clientX,e.clientY);
+
+  if(!p){
+    return;
+  }
+
+  addPoint(p);
+});
+
+window.addEventListener("pointerup",()=>{
+
+  if(!dragging){
+    return;
+  }
+
+  dragging=false;
+  finishPath();
+});
+
+function endGame(){
+
+  document.getElementById("finalScore").textContent=score;
+
+  let rank="C";
+
+  if(score>=1800){
+    rank="S";
+  }else if(score>=1200){
+    rank="A";
+  }else if(score>=700){
+    rank="B";
+  }
+
+  document.getElementById("rank").textContent=rank;
+
+  showScreen("resultScreen");
+}
+
+document.getElementById("startBtn")
+.addEventListener("click",startGame);
+
+document.getElementById("restartBtn")
+.addEventListener("click",startGame);
+
+document.addEventListener("gesturestart",e=>{
+  e.preventDefault();
+});
+</script>
+
+</body>
+</html>
